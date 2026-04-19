@@ -15,7 +15,7 @@ build/
 venv/
 env/
 .venv/
-.env/
+.env
 
 # ── Streamlit ─────────────────────────────────────────────────────────────────
 .streamlit/secrets.toml
