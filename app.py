@@ -1,32 +1,13 @@
-# ── YouTube Content Creation Agent ───────────────────────────────────────────
-# app.py — Core logic + Streamlit Web UI
-#
 # Architecture:
 #   User (browser) → Streamlit UI → get_realtime_info() → Tavily API
 #                                 → generate_video_script() → Gemini API
-#
-# Phase 1: Infrastructure & skeleton  ✅
-# Phase 2: Core function implementation (coming next)
-# Phase 3: Integration & final demo
-# Phase 4: Deployment
-# ─────────────────────────────────────────────────────────────────────────────
 
-# ── Standard library ─────────────────────────────────────────────────────────
-import os
-
-# ── Third-party: environment ──────────────────────────────────────────────────
+import os 
 from dotenv import load_dotenv
-
-# ── Third-party: AI & search ──────────────────────────────────────────────────
 import google.generativeai as genai
 from tavily import TavilyClient
-
-# ── Third-party: web UI ───────────────────────────────────────────────────────
 import streamlit as st
 
-
-# ── 1. Load environment variables ─────────────────────────────────────────────
-# Reads GEMINI_API_KEY and TAVILY_API_KEY from the .env file
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
