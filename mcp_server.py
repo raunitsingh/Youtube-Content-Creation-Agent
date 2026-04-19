@@ -1,47 +1,40 @@
-# ── YouTube Content Creation Agent ───────────────────────────────────────────
-# mcp_server.py — MCP Server via FastMCP
-#
-# Exposes the same core logic from app.py as MCP tools so that any
-# MCP-compatible AI agent (e.g. Claude) can call them programmatically.
-#
-# MCP Tools exposed:
-#   • get_latest_info_mcp  → wraps get_realtime_info()
-#   • get_video_script_mcp → wraps generate_video_script()
-#
-# Run with:
-#   python mcp_server.py
+# Run: python mcp_server.py
 
 import os
+
 from dotenv import load_dotenv
 from fastmcp import FastMCP
+
+# Import core functions from app.py — single source of truth, no duplication
 from app import get_realtime_info, generate_video_script
+
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 
 load_dotenv()
 
-
-# ── 2. Initialise FastMCP server ──────────────────────────────────────────────
-# The server name is displayed to MCP clients during tool discovery.
 mcp = FastMCP("YouTube Content Creation Agent")
 
 
-# ── 3. MCP Tool: get_latest_info_mcp ─────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# MCP Tools
+# ---------------------------------------------------------------------------
 
 @mcp.tool()
 def get_latest_info_mcp(query: str) -> str:
     """
-    Fetch real-time web information on a given topic.
+    Fetch real-time web information on a given topic via Tavily.
 
-    This tool uses the Tavily Search API to retrieve recent, accurate
-    information from the web on the topic provided. Use this before
-    calling get_video_script_mcp to ensure the script is grounded in
-    current facts.
+    Use this before get_video_script_mcp to ground the script in
+    current, accurate information from the web.
 
     Args:
-        query (str): The topic or search query to research.
+        query: The topic or search query to research.
 
     Returns:
-        str: Formatted string of search results including titles, URLs,
-             and content snippets relevant to the query.
+        Formatted string of search results — titles, URLs, and content snippets.
 
     Example:
         get_latest_info_mcp("AI agents trends 2025")
@@ -49,30 +42,26 @@ def get_latest_info_mcp(query: str) -> str:
     return get_realtime_info(query)
 
 
-# ── 4. MCP Tool: get_video_script_mcp ────────────────────────────────────────
-
 @mcp.tool()
 def get_video_script_mcp(info_text: str) -> str:
     """
-    Generate a structured YouTube video script from research content.
+    Generate a structured YouTube video script from research content via Groq.
 
-    This tool takes the research text returned by get_latest_info_mcp
-    and passes it to Google Gemini (gemini-2.0-flash) to produce a
-    complete, production-ready YouTube video script.
+    Takes the research text from get_latest_info_mcp and produces a
+    complete, production-ready YouTube script using LLaMA 3.3 70B on Groq.
 
-    The generated script includes:
-        - Hook (attention-grabbing opening)
-        - Introduction (topic overview)
-        - Main content sections (research-backed talking points)
-        - Call to action (subscribe, like, comment prompts)
+    Script sections generated:
+        - Hook
+        - Introduction
+        - Main content (research-backed sections)
+        - Call to action
         - Outro
 
     Args:
-        info_text (str): Research content, typically the output of
-                         get_latest_info_mcp().
+        info_text: Research content from get_latest_info_mcp.
 
     Returns:
-        str: A complete structured YouTube video script in markdown format.
+        A complete YouTube video script in markdown format.
 
     Example:
         info = get_latest_info_mcp("AI agents trends 2025")
@@ -81,11 +70,14 @@ def get_video_script_mcp(info_text: str) -> str:
     return generate_video_script(info_text)
 
 
-# ── 5. Entry point ────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 if __name__ == "__main__":
-    print("Starting YouTube Content Creation Agent MCP Server...")
-    print("Tools available:")
-    print("  • get_latest_info_mcp  — real-time topic research via Tavily")
-    print("  • get_video_script_mcp — YouTube script generation via Gemini")
+    print("YouTube Content Creation Agent — MCP Server")
+    print("Tools:")
+    print("  get_latest_info_mcp  — real-time research via Tavily")
+    print("  get_video_script_mcp — script generation via Groq (LLaMA 3.3 70B)")
     print()
     mcp.run()
