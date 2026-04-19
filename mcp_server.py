@@ -10,27 +10,12 @@
 #
 # Run with:
 #   python mcp_server.py
-#
-# Phase 1: Infrastructure & skeleton  ✅
-# Phase 2: Core function implementation (coming next)
-# ─────────────────────────────────────────────────────────────────────────────
 
-# ── Standard library ─────────────────────────────────────────────────────────
 import os
-
-# ── Third-party: environment ──────────────────────────────────────────────────
 from dotenv import load_dotenv
-
-# ── Third-party: MCP framework ────────────────────────────────────────────────
 from fastmcp import FastMCP
-
-# ── Local: core logic (shared with app.py) ────────────────────────────────────
-# Import the two core functions from app.py so we don't duplicate logic.
-# Both the Streamlit UI and the MCP server share exactly one source of truth.
 from app import get_realtime_info, generate_video_script
 
-
-# ── 1. Load environment variables ─────────────────────────────────────────────
 load_dotenv()
 
 
