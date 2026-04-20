@@ -1,6 +1,4 @@
-# YouTube Content Creation Agent
-
-> An AI-powered agent that researches any topic in real-time and generates a production-ready YouTube video script — exposed both as a web app and as an MCP server for AI agent integration.
+A production-ready AI agent that researches any topic in real-time and generates a structured YouTube video script. Built with three consumption interfaces — a Streamlit web app, a Flask REST API, and an MCP server for direct AI agent integration.
 
 ---
 
@@ -9,19 +7,14 @@
 - [Overview](#overview)
 - [Key Features](#key-features)
 - [Architecture](#architecture)
-  - [System Components](#system-components)
-  - [Data Flow](#data-flow)
-  - [Core Functions](#core-functions)
 - [Project Structure](#project-structure)
 - [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Running the App](#running-the-app)
-  - [Streamlit Web UI](#streamlit-web-ui)
-  - [MCP Server](#mcp-server)
+- [Running the Application](#running-the-application)
+- [API Reference](#api-reference)
 - [MCP Tools Reference](#mcp-tools-reference)
-- [Build Phases](#build-phases)
 - [Deployment](#deployment)
 - [Environment Variables](#environment-variables)
 - [Contributing](#contributing)
@@ -31,115 +24,111 @@
 
 ## Overview
 
-The **YouTube Content Creation Agent** is a multi-interface AI system that takes a user-provided topic, fetches live information from the web using **Tavily**, and generates a structured, high-quality video script using **Google Gemini (gemini-2.0-flash)**.
+The **YouTube Content Creation Agent** is a multi-interface AI system built around two core functions:
 
-It is built with two consumption surfaces:
+1. **Research** — queries the Tavily Search API to pull real-time, accurate information on any topic from across the web
+2. **Script generation** — feeds that research into **Groq (LLaMA 3.3 70B)** to produce a complete, production-ready YouTube video script
 
-1. **Streamlit Web App** — a browser-based UI for human users
-2. **MCP Server (FastMCP)** — a programmatic interface for AI agents via the Model Context Protocol
+The same core logic is exposed through three interfaces simultaneously: a Streamlit web app for human users, a Flask REST API for programmatic access, and an MCP server so that any MCP-compatible AI agent can invoke the tools directly via tool calls — no duplication, one source of truth.
 
 ---
 
 ## Key Features
 
-- **Real-time research** — uses Tavily Search API to pull fresh, up-to-date content on any topic
-- **AI script generation** — Gemini summarises research and produces a structured YouTube script with intro, body, and outro
-- **Dual interface** — same core logic powers both the web UI and the MCP server
-- **MCP integration** — any MCP-compatible AI agent (e.g. Claude) can call the agent's tools programmatically via tool calls
-- **Environment-based config** — all API keys stored securely in `.env`
+- **Real-time web research** — Tavily's advanced search mode pulls fresh, relevant content on any topic, not cached knowledge
+- **Structured script generation** — LLaMA 3.3 70B on Groq produces a 7-section script (hook, intro, 3 content sections, CTA, outro) grounded in the research
+- **Three interfaces, one codebase** — Streamlit UI, Flask REST API, and MCP server all import from the same `app.py` core functions
+- **MCP-native** — exposes `get_latest_info_mcp` and `get_video_script_mcp` as discoverable tools for any AI agent with MCP client support
+- **Containerised and CI/CD ready** — Dockerfile, Procfile, and a GitHub Actions pipeline that lints, builds, and smoke-tests on every push to `main`
+- **Secure by default** — all credentials managed via `.env`, never hardcoded; non-root Docker user; XSRF protection enabled
 
 ---
 
 ## Architecture
 
-### System Components
+### System diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CONSUMERS                                │
-│                                                                 │
-│   ┌─────────────────┐              ┌─────────────────────────┐  │
-│   │   End User      │              │    AI Agents            │  │
-│   │   (Browser)     │              │    (MCP Clients)        │  │
-│   └────────┬────────┘              └────────────┬────────────┘  │
-│            │ Topic query                        │ Tool calls    │
-└────────────│────────────────────────────────────│───────────────┘
-             │                                    │
-             ▼                                    ▼
-┌────────────────────┐              ┌─────────────────────────────┐
-│  Streamlit App     │              │  MCP Server (mcp_server.py) │
-│  (app.py · Web UI) │──────────►  │  FastMCP framework          │
-│                    │   Core Logic │  Tools: get_latest_info_mcp │
-└────────────────────┘              │          get_video_script_mcp│
-             │                      └─────────────────────────────┘
-             │
-             ▼
-┌────────────────────────────────────────────────────────────────┐
-│                     CORE LOGIC  (app.py)                       │
-│                                                                │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │  get_realtime_info(query)                               │  │
-│   │  → calls Tavily → returns raw search results as text   │  │
-│   └─────────────────────────────────────────────────────────┘  │
-│                                                                │
-│   ┌─────────────────────────────────────────────────────────┐  │
-│   │  generate_video_script(info_text)                       │  │
-│   │  → sends results to Gemini → returns structured script  │  │
-│   └─────────────────────────────────────────────────────────┘  │
-└──────────────────────────┬──────────────────┬──────────────────┘
-                           │                  │
-              Search ▼     │                  │  ▲ Script
-                           ▼                  ▼
-              ┌────────────────┐    ┌────────────────────────┐
-              │  Tavily API    │    │   Google Gemini         │
-              │  Real-time     │    │   gemini-2.0-flash      │
-              │  Web Search    │    │   Summarise & Generate  │
-              └────────────────┘    └────────────────────────┘
-                           │                  │
-                           └──────┬───────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                             CONSUMERS                                │
+│                                                                      │
+│   ┌─────────────────┐   ┌──────────────────┐   ┌─────────────────┐  │
+│   │   End User      │   │   REST Client    │   │   AI Agent      │  │
+│   │   (Browser)     │   │   (curl / SDK)   │   │   (MCP Client)  │  │
+│   └────────┬────────┘   └────────┬─────────┘   └────────┬────────┘  │
+└────────────│────────────────────-│────────────────────── │───────────┘
+             │                     │                        │
+             ▼                     ▼                        ▼
+   ┌──────────────────┐  ┌──────────────────┐  ┌───────────────────────┐
+   │  Streamlit App   │  │  Flask REST API  │  │  MCP Server           │
+   │  app.py          │  │  flask_app.py    │  │  mcp_server.py        │
+   │  :8501           │  │  :8080           │  │  FastMCP              │
+   └────────┬─────────┘  └────────┬─────────┘  └───────────┬───────────┘
+            │                     │                          │
+            └─────────────────────┴──────────────────────────┘
                                   │
-                            ┌─────▼──────┐
-                            │   .env     │
-                            │ GEMINI_KEY │
-                            │ TAVILY_KEY │
-                            └────────────┘
+                                  ▼
+                    ┌─────────────────────────┐
+                    │     CORE LOGIC          │
+                    │     app.py              │
+                    │                         │
+                    │  get_realtime_info()    │
+                    │  generate_video_script()│
+                    └────────────┬────────────┘
+                                 │
+                  ┌──────────────┴──────────────┐
+                  │                             │
+                  ▼                             ▼
+       ┌──────────────────┐         ┌──────────────────────┐
+       │   Tavily API     │         │   Groq API           │
+       │   Real-time      │         │   LLaMA 3.3 70B      │
+       │   web search     │         │   Script generation  │
+       └──────────────────┘         └──────────────────────┘
+                  │                             │
+                  └──────────────┬──────────────┘
+                                 │
+                          ┌──────▼──────┐
+                          │    .env     │
+                          │  GROQ_KEY   │
+                          │  TAVILY_KEY │
+                          └─────────────┘
 ```
 
-### Data Flow
+### Data flow
 
 ```
-User Input (Topic)
-       │
-       ▼
+User Input (topic)
+      │
+      ▼
 get_realtime_info(query)
-       │
-       ├──► Tavily Search API
-       │         │
-       │    Search Results (JSON)
-       │         │
-       ◄─────────┘
-       │
-  info_text (formatted string)
-       │
-       ▼
+      │
+      ├──► Tavily Search API (search_depth="advanced", max_results=6)
+      │         │
+      │    Titles + URLs + content snippets
+      │         │
+      ◄─────────┘
+      │
+ Formatted research text
+      │
+      ▼
 generate_video_script(info_text)
-       │
-       ├──► Google Gemini (gemini-2.0-flash)
-       │         │
-       │    Generated Script (markdown)
-       │         │
-       ◄─────────┘
-       │
-       ▼
-  Final Script → displayed in Streamlit UI / returned via MCP tool
+      │
+      ├──► Groq — LLaMA 3.3 70B (temperature=0.7, max_tokens=2048)
+      │         │
+      │    Structured markdown script
+      │         │
+      ◄─────────┘
+      │
+      ▼
+ Final script → Streamlit UI / Flask JSON response / MCP tool return
 ```
 
-### Core Functions
+### Core functions
 
-| Function | Input | Output | External Call |
+| Function | Input | Output | API |
 |---|---|---|---|
-| `get_realtime_info(query)` | Topic string | Formatted research text | Tavily Search API |
-| `generate_video_script(info_text)` | Research text | Structured video script | Google Gemini API |
+| `get_realtime_info(query)` | Topic string | Numbered research blocks with titles, sources, and content | Tavily |
+| `generate_video_script(info_text)` | Research text | 7-section YouTube script in markdown | Groq |
 
 ---
 
@@ -148,16 +137,24 @@ generate_video_script(info_text)
 ```
 youtube-content-creation-agent/
 │
-├── app.py                  # Core logic + Streamlit web UI
-├── mcp_server.py           # MCP server exposing tools via FastMCP
-├── .env                    # API keys (never commit this)
-├── .env.example            # Template for environment variables
-├── requirements.txt        # Python dependencies
-├── README.md               # Project documentation
+├── app.py                         # Core logic + Streamlit web UI
+├── flask_app.py                   # Flask REST API (imports from app.py)
+├── mcp_server.py                  # MCP server via FastMCP (imports from app.py)
 │
-└── (optional)
-    ├── utils/              # Shared helper functions
-    └── tests/              # Unit and integration tests
+├── requirements.txt               # Python dependencies
+├── Dockerfile                     # Container definition for Flask API
+├── Procfile                       # Railway / Heroku process declaration
+│
+├── .env                           # API keys — never commit this
+├── .env.example                   # Safe template to commit
+├── .gitignore
+│
+├── .streamlit/
+│   └── config.toml                # Streamlit Cloud configuration + theme
+│
+└── .github/
+    └── workflows/
+        └── deploy.yml             # CI/CD: lint → build → health check
 ```
 
 ---
@@ -167,51 +164,42 @@ youtube-content-creation-agent/
 | Layer | Technology |
 |---|---|
 | Web UI | Streamlit |
-| AI / Script Generation | Google Gemini — `gemini-2.0-flash` |
-| Real-time Search | Tavily Search API |
-| MCP Server Framework | FastMCP |
-| Language | Python 3.10+ |
-| Config Management | python-dotenv |
-| Deployment (Web) | Streamlit Community Cloud |
-| Deployment (API) | Flask + CI/CD pipeline |
+| REST API | Flask + Gunicorn |
+| LLM / Script generation | Groq — LLaMA 3.3 70B Versatile |
+| Real-time search | Tavily Search API |
+| MCP server | FastMCP |
+| Language | Python 3.11 |
+| Containerisation | Docker |
+| CI/CD | GitHub Actions |
+| Config management | python-dotenv |
+| Web deployment | Streamlit Community Cloud |
+| API deployment | Railway / Heroku / Cloud Run |
 
 ---
 
 ## Prerequisites
 
-Before you begin, ensure you have the following:
-
 - Python 3.10 or higher
-- `pip` package manager
-- A **Tavily API key** — sign up at [tavily.com](https://tavily.com)
-- A **Google Gemini API key** — get one from [Google AI Studio](https://aistudio.google.com)
+- pip
+- Docker (for containerised deployment only)
+- A **Groq API key** — [console.groq.com/keys](https://console.groq.com/keys)
+- A **Tavily API key** — [app.tavily.com/home](https://app.tavily.com/home)
 
 ---
 
 ## Installation
 
-### 1. Clone the repository
-
 ```bash
+# 1. Clone the repository
 git clone https://github.com/your-username/youtube-content-creation-agent.git
 cd youtube-content-creation-agent
-```
 
-### 2. Create a virtual environment
-
-```bash
+# 2. Create and activate a virtual environment
 python -m venv venv
+source venv/bin/activate        # Linux / macOS
+# venv\Scripts\activate         # Windows
 
-# Activate on Linux/macOS
-source venv/bin/activate
-
-# Activate on Windows
-venv\Scripts\activate
-```
-
-### 3. Install dependencies
-
-```bash
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -219,93 +207,150 @@ pip install -r requirements.txt
 
 ## Configuration
 
-### 1. Create your `.env` file
-
 ```bash
+# Copy the template
 cp .env.example .env
 ```
 
-### 2. Fill in your API keys
+Open `.env` and fill in your keys:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GROQ_API_KEY=your_groq_api_key_here
 TAVILY_API_KEY=your_tavily_api_key_here
 ```
 
-> **Security note:** Never commit your `.env` file to version control. It is already listed in `.gitignore`.
+The app validates both keys on startup and exits with a clear error message if either is missing.
 
 ---
 
-## Running the App
+## Running the Application
 
-### Streamlit Web UI
+### Streamlit web UI
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`. Enter a topic and click **Generate Script** to get your research-backed video script.
+Opens at `http://localhost:8501`. Enter a topic and click **Generate Script**. The UI shows live status for both the research and generation steps, then renders the script with a download button.
 
-### MCP Server
+### Flask REST API
+
+```bash
+# Development
+python flask_app.py
+
+# Production
+gunicorn flask_app:app --bind 0.0.0.0:8080 --workers 2 --timeout 120
+```
+
+Runs at `http://localhost:8080`. See [API Reference](#api-reference) for endpoints.
+
+### MCP server
 
 ```bash
 python mcp_server.py
 ```
 
-This starts the FastMCP server and exposes the tools over the Model Context Protocol. AI agents with MCP client support can now call `get_latest_info_mcp` and `get_video_script_mcp` as tool calls.
+Starts the FastMCP server and advertises two tools to any connected MCP client. See [MCP Tools Reference](#mcp-tools-reference).
+
+---
+
+## API Reference
+
+### `GET /health`
+
+Liveness check used by Docker, Railway, and the CI/CD pipeline.
+
+**Response**
+
+```json
+{
+  "status": "ok",
+  "service": "YouTube Content Creation Agent"
+}
+```
+
+---
+
+### `POST /research`
+
+Fetch real-time web research on a topic.
+
+**Request body**
+
+```json
+{
+  "query": "AI agents in 2027"
+}
+```
+
+**Response**
+
+```json
+{
+  "query": "AI agents in 2027",
+  "info": "[1] Title of result\n    Source: https://...\n    Content snippet..."
+}
+```
+
+---
+
+### `POST /generate-script`
+
+Run the full pipeline — research a topic and generate a complete YouTube script in a single call.
+
+**Request body**
+
+```json
+{
+  "topic": "AI agents in 2027"
+}
+```
+
+**Response**
+
+```json
+{
+  "topic": "AI agents in 2027",
+  "info": "..research text used...",
+  "script": "# Your Video Title\n\n## Hook\n..."
+}
+```
+
+**Error responses** return a JSON object with an `"error"` key and an appropriate HTTP status code (400 for missing input, 404 if no results found, 500 for upstream failures).
 
 ---
 
 ## MCP Tools Reference
 
+Both tools are registered on the FastMCP server and discoverable by any MCP-compatible AI agent.
+
 ### `get_latest_info_mcp`
 
-Fetches real-time web information on a given topic using Tavily.
+Fetches real-time web information on a topic via Tavily.
 
 | Parameter | Type | Description |
 |---|---|---|
 | `query` | `string` | The topic or search query |
 
-**Returns:** A formatted string of recent search results relevant to the topic.
-
----
+Returns a formatted string of search results — titles, source URLs, and content snippets.
 
 ### `get_video_script_mcp`
 
-Generates a structured YouTube video script from research text using Gemini.
+Generates a structured YouTube script from research content via Groq.
 
 | Parameter | Type | Description |
 |---|---|---|
-| `info_text` | `string` | Research content (typically the output of `get_latest_info_mcp`) |
+| `info_text` | `string` | Research content, typically from `get_latest_info_mcp` |
 
-**Returns:** A structured video script with hook, introduction, main sections, call to action, and outro.
+Returns a complete 7-section YouTube video script in markdown format.
 
----
+**Typical agent workflow:**
 
-## Build Phases
-
-This project was built phase by phase following a structured curriculum:
-
-### Phase 1 — Preparation & Infrastructure
-- Project introduction and architecture walkthrough
-- Repository setup and folder structure
-- Virtual environment and `requirements.txt`
-- API key acquisition (Tavily + Gemini)
-
-### Phase 2 — Core Development
-- `get_realtime_info()` function using Tavily
-- `generate_video_script()` function using Gemini
-- `mcp_server.py` — wrapping both functions as MCP tools via FastMCP
-
-### Phase 3 — Completion
-- Streamlit UI integration
-- End-to-end testing with real topics
-- Final demo
-
-### Phase 4 — Deployment
-- Streamlit Community Cloud deployment
-- Flask app packaging for CI/CD
-- Production-ready configuration
+```
+info = get_latest_info_mcp("AI agents in 2027")
+script = get_video_script_mcp(info)
+```
 
 ---
 
@@ -313,38 +358,89 @@ This project was built phase by phase following a structured curriculum:
 
 ### Streamlit Community Cloud
 
-1. Push your code to a public GitHub repository
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repository and set `app.py` as the entry point
-4. Add your environment variables (`GEMINI_API_KEY`, `TAVILY_API_KEY`) in the secrets manager
+1. Push your repository to GitHub (ensure `.env` is in `.gitignore`)
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
+3. Select your repository and set the entry point to `app.py`
+4. Under **Settings → Secrets**, add:
 
-### Flask + CI/CD
+```toml
+GROQ_API_KEY = "your_groq_api_key"
+TAVILY_API_KEY = "your_tavily_api_key"
+```
 
-For production API deployment, the project can be wrapped in a Flask app and deployed via a CI/CD pipeline (e.g. GitHub Actions → Cloud Run / Heroku / Railway).
+Streamlit Cloud reads `.streamlit/config.toml` automatically for theme and server settings.
+
+---
+
+### Docker
 
 ```bash
-# Example: running as Flask app
-flask run --host=0.0.0.0 --port=8080
+# Build the image
+docker build -t youtube-agent .
+
+# Run the container
+docker run -p 8080:8080 --env-file .env youtube-agent
 ```
+
+The container runs as a non-root user. Gunicorn is configured with 2 workers and a 120-second timeout to accommodate Groq response times.
+
+---
+
+### CI/CD via GitHub Actions
+
+The pipeline at `.github/workflows/deploy.yml` runs automatically on every push to `main`:
+
+| Job | What it does |
+|---|---|
+| **Lint** | Syntax-checks `app.py`, `flask_app.py`, and `mcp_server.py` via `py_compile` |
+| **Build** | Builds the Docker image and pushes it to GitHub Container Registry (GHCR) |
+| **Health check** | Spins up the container and hits `GET /health` — fails the pipeline if it does not return 200 |
+
+Add these secrets to your GitHub repository under **Settings → Secrets → Actions**:
+
+```
+GROQ_API_KEY
+TAVILY_API_KEY
+GHCR_TOKEN    # GitHub personal access token with packages:write scope
+```
+
+---
+
+### Railway / Heroku
+
+Both platforms read the `Procfile` directly:
+
+```
+web: gunicorn flask_app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+```
+
+Set `GROQ_API_KEY` and `TAVILY_API_KEY` as environment variables in the platform dashboard. No other configuration is needed.
 
 ---
 
 ## Environment Variables
 
-| Variable | Required | Description |
+| Variable | Required | Where to get it |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key from AI Studio |
-| `TAVILY_API_KEY` | Yes | Tavily Search API key |
+| `GROQ_API_KEY` | Yes | [console.groq.com/keys](https://console.groq.com/keys) |
+| `TAVILY_API_KEY` | Yes | [app.tavily.com/home](https://app.tavily.com/home) |
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes (`git commit -m 'Add your feature'`)
-4. Push to the branch (`git push origin feature/your-feature`)
-5. Open a Pull Request
+```bash
+# Fork the repo and create a branch
+git checkout -b feature/your-feature
+
+# Make your changes, then commit
+git commit -m "Add your feature"
+
+# Push and open a pull request
+git push origin feature/your-feature
+```
+
+Please keep pull requests focused — one feature or fix per PR.
 
 ---
 
@@ -353,4 +449,3 @@ flask run --host=0.0.0.0 --port=8080
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
-
