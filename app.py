@@ -36,7 +36,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 
 # ---------------------------------------------------------------------------
-# Core functions  (Phase 2 implementation)
+# Core functions
 # ---------------------------------------------------------------------------
 
 def get_realtime_info(query: str) -> str:
@@ -49,7 +49,34 @@ def get_realtime_info(query: str) -> str:
     Returns:
         Formatted string of search results (titles, URLs, content snippets).
     """
-    raise NotImplementedError("get_realtime_info() will be implemented in Phase 2.")
+    response = tavily_client.search(
+        query=query,
+        search_depth="advanced",
+        max_results=6,
+        include_answer=True,
+    )
+
+    lines = []
+
+    # Top-level answer Tavily sometimes provides
+    if response.get("answer"):
+        lines.append(f"Summary: {response['answer']}\n")
+
+    # Individual search results
+    for i, result in enumerate(response.get("results", []), start=1):
+        title   = result.get("title", "No title")
+        url     = result.get("url", "")
+        content = result.get("content", "").strip()
+
+        lines.append(f"[{i}] {title}")
+        lines.append(f"    Source: {url}")
+        lines.append(f"    {content}")
+        lines.append("")
+
+    if not lines:
+        raise ValueError(f"Tavily returned no results for query: '{query}'")
+
+    return "\n".join(lines)
 
 
 def generate_video_script(info_text: str) -> str:
@@ -62,7 +89,71 @@ def generate_video_script(info_text: str) -> str:
     Returns:
         A complete, structured YouTube video script in markdown format.
     """
-    raise NotImplementedError("generate_video_script() will be implemented in Phase 2.")
+    prompt = f"""You are an expert YouTube scriptwriter. Using the research below, write a
+complete, engaging YouTube video script. The script must follow this exact structure:
+
+# [Video Title]
+
+## Hook  (0-30 seconds)
+An attention-grabbing opening statement or question. No fluff — pull the viewer in immediately.
+
+## Introduction  (30-60 seconds)
+Briefly introduce what the video covers and why the viewer should keep watching.
+
+## Section 1: [Descriptive heading]
+Talking points backed by the research. Write in a conversational, natural tone.
+
+## Section 2: [Descriptive heading]
+Continue with the next key idea from the research.
+
+## Section 3: [Descriptive heading]
+A third key idea or insight from the research.
+
+## Call to Action
+Ask the viewer to like, comment, and subscribe. Make it feel natural, not forced.
+
+## Outro  (last 15 seconds)
+A memorable closing line that wraps up the topic and teases future content.
+
+---
+Guidelines:
+- Write in a conversational tone, as if speaking directly to the viewer.
+- Each section should be 150-250 words of spoken script.
+- Do not include stage directions or timestamps beyond the structure above.
+- Do not fabricate statistics — use only what is in the research.
+- The entire script should be 800-1200 words.
+
+Research:
+{info_text}
+
+Write the full script now:"""
+
+    response = groq_client.chat.completions.create(
+        model=GROQ_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a professional YouTube scriptwriter. "
+                    "You write clear, engaging, research-backed video scripts. "
+                    "Always follow the structure given by the user exactly."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        temperature=0.7,
+        max_tokens=2048,
+    )
+
+    script = response.choices[0].message.content
+
+    if not script or not script.strip():
+        raise ValueError("Groq returned an empty response. Try again.")
+
+    return script.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -107,12 +198,10 @@ def main():
                 info_text = get_realtime_info(topic)
                 st.write("Research complete.")
                 status.update(label="Research done", state="complete")
-            except NotImplementedError:
-                st.warning("get_realtime_info() not yet implemented. Coming in Phase 2.")
-                info_text = None
             except Exception as e:
                 st.error(f"Research failed: {e}")
                 info_text = None
+                status.update(label="Research failed", state="error")
 
         # Step 2: Script generation
         if info_text:
@@ -121,12 +210,10 @@ def main():
                 try:
                     script = generate_video_script(info_text)
                     status.update(label="Script ready", state="complete")
-                except NotImplementedError:
-                    st.warning("generate_video_script() not yet implemented. Coming in Phase 2.")
-                    script = None
                 except Exception as e:
                     st.error(f"Script generation failed: {e}")
                     script = None
+                    status.update(label="Generation failed", state="error")
 
             if script:
                 st.divider()
@@ -155,7 +242,7 @@ def main():
 
         st.caption(f"Model: {GROQ_MODEL}")
         st.divider()
-        st.caption("Phase 1 — Infrastructure")
+        st.caption("Phase 2 — Core Development")
 
 
 if __name__ == "__main__":
