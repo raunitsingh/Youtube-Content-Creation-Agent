@@ -1,0 +1,106 @@
+# Triggers on every push to main.
+# Jobs: lint → build → deploy (Streamlit Cloud auto-deploys via GitHub integration;
+#        Docker image pushed to GHCR for the Flask API).
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/youtube-content-agent
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Job 1: Lint & syntax check
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check syntax (py_compile)
+        run: |
+          python -m py_compile app.py
+          python -m py_compile flask_app.py
+          python -m py_compile mcp_server.py
+          echo "Syntax check passed."
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Build & push Docker image
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Health check — smoke test the deployed Flask API
+  # ---------------------------------------------------------------------------
+  healthcheck:
+    name: Health check
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Spin up container and hit /health
+        run: |
+          docker run -d \
+            --name agent-test \
+            -p 8080:8080 \
+            -e GROQ_API_KEY=${{ secrets.GROQ_API_KEY }} \
+            -e TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }} \
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+          # Wait for gunicorn to start
+          sleep 5
+
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+          echo "Health endpoint returned: $STATUS"
+
+          docker stop agent-test
+
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed."
+            exit 1
+          fi
+
+          echo "Health check passed."
