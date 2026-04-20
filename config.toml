@@ -1,0 +1,23 @@
+# YouTube Content Creation Agent
+# .streamlit/config.toml — Streamlit Cloud configuration
+#
+# This file is read automatically by Streamlit on startup.
+# On Streamlit Community Cloud, add secrets via the dashboard —
+# Settings > Secrets — not here.
+
+[server]
+headless            = true
+enableCORS          = false
+enableXsrfProtection = true
+maxUploadSize       = 10
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base            = "light"
+primaryColor    = "#FF0000"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F5F5"
+textColor       = "#0F0F0F"
+font            = "sans serif"
