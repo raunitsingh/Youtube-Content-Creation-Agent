@@ -20,3 +20,7 @@ httpx>=0.27.0
 
 # Type hints support (Python 3.10+)
 typing-extensions>=4.11.0
+
+# Flask — REST API for production deployment
+flask>=3.0.0
+gunicorn>=22.0.0
